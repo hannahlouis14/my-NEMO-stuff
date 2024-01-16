@@ -1,0 +1,6 @@
+Restoring modules from user's MYMODS310
+
+The following have been reloaded with a version change:
+  1) ipykernel/2023b => ipykernel/2023a
+  2) scipy-stack/2023b => scipy-stack/2023a
+
