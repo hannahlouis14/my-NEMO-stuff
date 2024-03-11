@@ -70,7 +70,7 @@ def COREBULK(zt,zu,sst,T_zt,q_sat,q_zt,dU):
     else:
         Temp_Wind_Same_Height=0
 
-    U_zu=np.maximum(dU,np.array(10))
+    U_zu=np.maximum(dU,np.array(0.5))
     
     # stability check
     ztmp0=T_zt*(1+0.608*q_zt)-sst*(1+0.608*q_sat)
@@ -122,7 +122,7 @@ def COREBULK(zt,zu,sst,T_zt,q_sat,q_zt,dU):
             q_zu = np.maximum(np.array(0), q_zu)
         
         input1 = U_zu / (1 + sqrt_Cd_n10 / vkarmn * (np.log(zu/10) - zpsi_m_u))
-        input1 = np.maximum(input1, np.array(0.5))
+        input1 = np.maximum(input1, np.array(0.25))
         ztmp0=input1
         ztmp0 = cd_neutral_10m(ztmp0)
         sqrt_Cd_n10 = np.sqrt(ztmp0)
@@ -216,7 +216,7 @@ def TurbulentFluxes(inputmask, AtmData, runid, year):
 
     SST = dt['sst'][:,0]  #dt['votemper'][:,0]  # we just want the surface temp
     SST = assign_timestamp(TempOnNemo, SST)
-
+    
     humid_mod = zcoef_qsatw * np.exp(-5107.4/SST)  # equation to calculate humidity from 
 
 
@@ -246,42 +246,71 @@ def TurbulentFluxes(inputmask, AtmData, runid, year):
     
     else:
         evap = rhoa * Ce * (humid_mod - q_zu) * wndm
-        turbsens = cp * rhoa * Ch * (SST - TempOnNemo) * wndm  #np.nanmean(np.nanmean(cp * rhoa * Ch * (SST-T_zu)*wndm))
+        turbsens = cp * rhoa * Ch * (SST - TempOnNemo) * wndm  
+        #turbsens = np.nanmean(np.nanmean(cp * rhoa * Ch * (SST-T_zu)*wndm))
 
-    turblat = evap*Lv  #np.nanmean(np.nanmean(evap*Lv))
+    turblat = evap*Lv  
+    #turblat = np.nanmean(np.nanmean(evap*Lv))
     turblat = turblat.rename('latent')
     turbsens = turbsens.rename('sensible')
-    
+    p1 = plt.pcolormesh(turbsens[0])
+    plt.colorbar(p1)
+    plt.show()
     #turblat = turblat.groupby('time_counter.month').mean('time_counter')
-     
     print(turblat)
-    turblat.to_netcdf('/project/6007519/hlouis/data_files/TurbFluxes/EPM151_TurbLatent_y'+str(year)+'.nc')
-    turbsens.to_netcdf('/project/6007519/hlouis/data_files/TurbFluxes/EPM151_TurbSensible_y'+str(year)+'.nc')
+    print(turbsens)
+    #turblat.to_netcdf('/project/6007519/hlouis/data_files/TurbFluxes/check/EPM151_TurbLatent_mean_y'+str(year)+'.nc')
+    #turbsens.to_netcdf('/project/6007519/hlouis/data_files/TurbFluxes/check/EPM151_TurbSensible_mean_y'+str(year)+'.nc')
     print('done!')
     dt.close()
     du.close()
     dv.close()
     mf.close()
 
+
+
+def RadiativeFluxes(inputmask, runid, year):
+    stef = 5.67e-8
+    emis = 0.96
+
+    if runid == 'EPM151':
+        path = '/project/6007519/pmyers/ANHA4/ANHA4-EPM151-S/'
+   
+
+    t=73    
+    # open the mask file
+    mf = nc.Dataset(inputmask)
+    rmask = mf['tmask']
+
+    mdl_files_ice = sorted(glob.glob(path+'ANHA4-'+runid+'_y'+str(year)+'*_icemod.nc'))
+    mdl_files_t = sorted(glob.glob(path+'ANHA4-'+runid+'_y'+str(year)+'*_gridT.nc'))
+    
+    d = xr.open_mfdataset(mdl_files_ice)
+    dt = xr.open_mfdataset(mdl_files_t)
+    
+    t = dt['votemper'][:,0]
+    t = t.rename({'nav_lon_grid_T': 'nav_lon', 'nav_lat_grid_T': 'nav_lat'})
+    t = t.rename({'x_grid_T': 'x', 'y_grid_T': 'y'})
+     
+    sw_rad = d['soshfldo']
+    net_downheat = d['sohefldo']
+    lw_upwards = emis*stef*(t+273.15)**4
+    #print(lw_upwards)
+    #print(net_downheat)
+    lw_rad = net_downheat - lw_upwards
+    net_rad = sw_rad + lw_rad 
+    p1 = plt.pcolormesh(net_rad[46], cmap='cmo.thermal', vmin=-350)
+    plt.colorbar(p1)
+    plt.show()
+  
+
+
+
+
 region_mask = '/project/6007519/hlouis/scripts/masks/shbjb_mask.nc'
 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2003)
+RadiativeFluxes(region_mask, runid='EPM151', year=2002)
+#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2002) 
+#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2003) 
 #TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2004) 
 #TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2005) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2006) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2007) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2008) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2009) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2010) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2011) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2012) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2013) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2014) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2015) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2016) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2017) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2018) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2019) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2020) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2021) 
-TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2022) 
