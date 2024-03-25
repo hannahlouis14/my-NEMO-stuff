@@ -204,10 +204,13 @@ def TurbulentFluxes(inputmask, AtmData, runid, year):
     mdl_files_t = sorted(glob.glob(nemo_path+'ANHA4-'+runid+'_y'+str(year)+'*_gridT.nc')) 
     mdl_files_u = sorted(glob.glob(nemo_path+'ANHA4-'+runid+'*_y'+str(year)+'*_gridU.nc')) 
     mdl_files_v = sorted(glob.glob(nemo_path+'ANHA4-'+runid+'*_y'+str(year)+'*_gridV.nc')) 
-
+    mdl_files_ice = sorted(glob.glob(nemo_path+'ANHA4-'+runid+'*_y'+str(year)+'*_icemod.nc'))
+    
     dt = xr.open_mfdataset(mdl_files_t)
     du = xr.open_mfdataset(mdl_files_u)
     dv = xr.open_mfdataset(mdl_files_v)
+    di = xr.open_mfdataset(mdl_files_ice)
+
     dt = dt.rename({'x_grid_T': 'x', 'y_grid_T': 'y', 'deptht': 'depth'})  # only gridT has this weird naming convention 
     du = du.rename({'depthu': 'depth'})
     dv = dv.rename({'depthv': 'depth'})
@@ -219,7 +222,10 @@ def TurbulentFluxes(inputmask, AtmData, runid, year):
     
     humid_mod = zcoef_qsatw * np.exp(-5107.4/SST)  # equation to calculate humidity from 
 
-
+    ice_conc = di['ileadfra']
+    print(ice_conc)
+    ice_conc = assign_timestamp(SST, ice_conc)
+    print(ice_conc)
     u_mod = du['vozocrtx'][:,0]  # we just want the surface velocity
     v_mod = dv['vomecrty'][:,0]
     u_mod = assign_timestamp(u, u_mod)  # need to get the time stamp out of cftime to pandas timestamp
@@ -239,78 +245,55 @@ def TurbulentFluxes(inputmask, AtmData, runid, year):
     Ce = Ce.where(rmask==1)  #np.ma.masked_where(rmask==0, Ce)
     T_zu = T_zu.where(rmask==1)  #np.ma.masked_where(rmask==0, T_zu)
     q_zu = q_zu.where(rmask==1)  #np.ma.masked_where(rmask==0, q_zu)
-
+    
     if AirHeight == 10:
-        evap = rhoa * Ce * (humid_mod - HumidOnNemo) * wndm
-        turbsens  = cp*rhoa*Ch*(SST-TempOnNemo) * wndm
+        evap = rhoa * Ce * (HumidOnNemo - humid_mod) * wndm * (1 - ice_conc)  #(humid_mod - HumidOnNemo) * wndm
+        turbsens  = cp*rhoa*Ch * (TempOnNemo - SST) * wndm* (1 - ice_conc)  #(SST-TempOnNemo) * wndm
     
     else:
-        evap = rhoa * Ce * (humid_mod - q_zu) * wndm
-        turbsens = cp * rhoa * Ch * (SST - TempOnNemo) * wndm  
+        evap = rhoa * Ce * (q_zu - humid_mod) * wndm* (1-ice_conc)  #(humid_mod - q_zu) * wndm
+        turbsens = cp * rhoa * Ch * (T_zu - SST) * wndm * (1-ice_conc)  #SST - T_zu) * wndm  
         #turbsens = np.nanmean(np.nanmean(cp * rhoa * Ch * (SST-T_zu)*wndm))
 
+    
     turblat = evap*Lv  
     #turblat = np.nanmean(np.nanmean(evap*Lv))
     turblat = turblat.rename('latent')
     turbsens = turbsens.rename('sensible')
-    p1 = plt.pcolormesh(turbsens[0])
-    plt.colorbar(p1)
-    plt.show()
+    
     #turblat = turblat.groupby('time_counter.month').mean('time_counter')
-    print(turblat)
-    print(turbsens)
-    #turblat.to_netcdf('/project/6007519/hlouis/data_files/TurbFluxes/check/EPM151_TurbLatent_mean_y'+str(year)+'.nc')
-    #turbsens.to_netcdf('/project/6007519/hlouis/data_files/TurbFluxes/check/EPM151_TurbSensible_mean_y'+str(year)+'.nc')
+    turblat.to_netcdf('/project/6007519/hlouis/data_files/TurbFluxes/EPM151_TurbLatent_no-ice_y'+str(year)+'.nc')
+    turbsens.to_netcdf('/project/6007519/hlouis/data_files/TurbFluxes/EPM151_TurbSensible_no-ice_y'+str(year)+'.nc')
     print('done!')
     dt.close()
     du.close()
     dv.close()
     mf.close()
-
-
-
-def RadiativeFluxes(inputmask, runid, year):
-    stef = 5.67e-8
-    emis = 0.96
-
-    if runid == 'EPM151':
-        path = '/project/6007519/pmyers/ANHA4/ANHA4-EPM151-S/'
    
 
-    t=73    
-    # open the mask file
-    mf = nc.Dataset(inputmask)
-    rmask = mf['tmask']
-
-    mdl_files_ice = sorted(glob.glob(path+'ANHA4-'+runid+'_y'+str(year)+'*_icemod.nc'))
-    mdl_files_t = sorted(glob.glob(path+'ANHA4-'+runid+'_y'+str(year)+'*_gridT.nc'))
-    
-    d = xr.open_mfdataset(mdl_files_ice)
-    dt = xr.open_mfdataset(mdl_files_t)
-    
-    t = dt['votemper'][:,0]
-    t = t.rename({'nav_lon_grid_T': 'nav_lon', 'nav_lat_grid_T': 'nav_lat'})
-    t = t.rename({'x_grid_T': 'x', 'y_grid_T': 'y'})
-     
-    sw_rad = d['soshfldo']
-    net_downheat = d['sohefldo']
-    lw_upwards = emis*stef*(t+273.15)**4
-    #print(lw_upwards)
-    #print(net_downheat)
-    lw_rad = net_downheat - lw_upwards
-    net_rad = sw_rad + lw_rad 
-    p1 = plt.pcolormesh(net_rad[46], cmap='cmo.thermal', vmin=-350)
-    plt.colorbar(p1)
-    plt.show()
-  
 
 
 
 
 region_mask = '/project/6007519/hlouis/scripts/masks/shbjb_mask.nc'
-
-RadiativeFluxes(region_mask, runid='EPM151', year=2002)
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2002) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2003) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2004) 
-#TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2005) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2002)
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2003) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2004) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2005) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2006) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2007) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2008) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2009) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2010) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2011) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2012) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2013) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2014) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2015) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2016) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2017) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2018) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2019) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2020) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2021) 
+TurbulentFluxes(region_mask, 'CGRF', runid='EPM151', year=2022)
