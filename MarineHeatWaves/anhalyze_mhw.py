@@ -17,76 +17,7 @@ import glob
 fig_path = '/project/6007519/hlouis/plotting/figures/mhw/'
 path = '/project/6007519/hlouis/scripts/MarineHeatWaves/timeseries_data/'
 
-Hudson_bay = False           # Boolean if using Hudson Bay vs James Bay locations.
 depth = 0                    # z axis location from 50 unit "depth" 
-
-if Hudson_bay: 
-    hudson_east = -75
-    hudson_west = -95
-    hudson_north = 65
-    hudson_south = 50
-    loc = 'hudson_bay'
-
-else:
-    hudson_east = -78.5
-    hudson_west = -82.5
-    hudson_north = 54.7
-    hudson_south = 51
-    loc = 'james_bay'
-
-lat_range = (hudson_south, hudson_north)
-lon_range = (hudson_west, hudson_east)
-
-
-
-def get_row_col_range(data, lat_range=lat_range, lon_range=lon_range, grid='gridT'):
-    """ Get the row and col range given lat and lon range. 
-    lat_range: latitude range (tuple)
-    lon_range: londitude range (tuple)
-    """
-
-    # Get all lat-lon data
-    if grid == 'gridT':
-        lat = data['nav_lat_grid_T'][:]
-        lon = data['nav_lon_grid_T'][:]
-    else:
-        # Get all lat-lon data
-        lat = data['nav_lat'][:]
-        lon = data['nav_lon'][:]
-
-    # Create mask given lat lon values.
-    lat_mask = np.ma.filled((lat.data > lat_range[0]) & (lat.data < lat_range[1]))
-    lon_mask = np.ma.filled((lon.data > lon_range[0]) & (lon.data < lon_range[1]))
-
-    # Apply masks to data
-    mask = lat
-    mask[~(lat_mask & lon_mask)] = 0
-
-    # Find the row,col range by collapsing each axis.
-    row_ranges = np.where(mask.data.sum(axis=1) > 0)[0]
-    col_ranges = np.where(mask.data.sum(axis=0) > 0)[0]
-
-    # Select range
-    row_range = (row_ranges[0], row_ranges[-1])
-    col_range = (col_ranges[0], col_ranges[-1])
-
-    return row_range, col_range
-
-
-
-def get_lat_lon(data, lat_range, lon_range, cardinal=True):
-    """  Getting Latitude and Longitude """
-
-    # Given data selection range in lat-lon or row-col
-    if cardinal:
-        row_range, col_range = get_row_col_range(data, lat_range, lon_range)
-    else:
-        row_range, col_range = lat_range, lon_range
-
-    lat = data['nav_lat_grid_T'][row_range[0]:row_range[1], col_range[0]:col_range[1]]
-    lon = data['nav_lon_grid_T'][row_range[0]:row_range[1], col_range[0]:col_range[1]]
-
-    return lat, lon
 
 
 
@@ -135,7 +66,7 @@ def get_timeseries(runid, minmax=False):
         mask = nc.Dataset(mask_path + 'shbjb_mask.nc')  
         tmask = mask['tmask']  # depth is already surface and there is no time dimension in hommade masks
     
-    file_list = sorted(glob.glob(data_path+'ANHA4-'+runid+'*_gridT.nc'))
+    file_list = sorted(glob.glob(data_path+'**/*_gridT.nc'))
     nfiles = len(file_list)
     tmask = np.broadcast_to(tmask,(1,)+tmask.shape)
 
@@ -148,31 +79,14 @@ def get_timeseries(runid, minmax=False):
 
     for filename in file_list:  
         # get the ANHA4 data
-        #data = nc.Dataset(filename)
-        print(filename) 
         data = xr.open_dataset(filename)
-        ''' 
-        cardinal = True
-        if cardinal:
-            row_range, col_range = get_row_col_range(data, lat_range, lon_range)
-        else:
-            row_range, col_range = lat_range, lon_range
-       
-
-        surf_mask = tmask[row_range[0]:row_range[1], col_range[0]:col_range[1]]
-        '''
-        var = 'votemper'
         
+        var = 'votemper'
         var_data = data[var][:,0]
         var_data = var_data.rename({'y_grid_T': 'y', 'x_grid_T': 'x'})
-        # Given data selection range in lat-lon or row-col for depth=0m
-        #var_data = var_data[0, depth, row_range[0]:row_range[1], col_range[0]:col_range[1]]
-        #tmask = np.broadcast_to(tmask,(1,)+tmask.shape) 
+        
         # mask data
-        #var_data.data[~np.ma.filled((1 == surf_mask.data))] = np.nan
         var_data = var_data.where(tmask==1)
-        #plt.pcolormesh(var_data[0])
-        #plt.show()
         
         var_mean = np.nanmean(var_data)
         var_std = np.nanstd(var_data)
@@ -197,7 +111,7 @@ def get_timeseries(runid, minmax=False):
 
 
 
-#get_timeseries(runid='EPM151')
+get_timeseries(runid='EPM111')
 
 
 def anhalyze_timeseries(timeseries,runid, mhw=True, return_series=False):
@@ -399,58 +313,10 @@ def plot_mhw(timeseries, year, remove_mean=True, show_cat4=False, region='James 
 
 
 
-def sst_diff(ts1, ts2):
-    ts1= ts1[(ts1['year'] > 2002) & (ts1['year'] < 2018)]
-
-    plot_res_temp=True
-    
-    if plot_res_temp:
-        plt.figure(figsize=(10,4))
-        plt.scatter(ts2['date'], ts2.var_mean - ts1.var_mean, c='k', alpha=0.3)
-        plt.ylabel('Residual Temperature ($^o$C)')
-        plt.xlabel('Year')
-        plt.tight_layout()
-        #plt.savefig(fig_path+'ETW161_JB_residual_temp.png')
-        plt.show()
 
 
 
 
-
-#get_timeseries(runid='ETW162')
-
-timeseries_151 = pd.read_csv(path+'EPM151_shbjb_timeseries_data.csv', index_col=False)
-#timeseries_111 = pd.read_csv(path+'EPM111_shbjb_timeseries_data.csv', index_col=False)
-#jb_timeseries_162 = jb_timeseries_151.reset_index(drop=True)
-#jb_timeseries_162['date'] = pd.to_datetime(jb_timeseries_162['date'], format='%Y-%m-%d')
-#jb_timeseries_162 = jb_timeseries_162[(jb_timeseries_162['date'] >= '2002-01-05') & (jb_timeseries_162['date'] < '2017-01-05')]
-anhalyze_timeseries(timeseries=timeseries_151, runid='EPM151')
-'''
-jb_ts161 = pd.read_csv(path+'ETW161_JamesBay_all_region_timeseries_data.csv', index_col=False)
-jb_ts161 = jb_ts161.reset_index(drop=True)
-ts161 = anhalyze_timeseries(timeseries=jb_ts161, runid='ETW161', return_series=True)
-
-jb_ts151 = pd.read_csv(path+'EPM151_james_bay_timeseries_data.csv', index_col=False)
-jb_ts151 = jb_ts151.reset_index(drop=True)  #axis=1, inplace=True)
-ts151 = anhalyze_timeseries(jb_ts151,runid='EPM151', return_series=True)
-ts151 = ts151[(ts151['year'] >=2002) & (ts151['year'] < 2019)]
-print(ts151)
-print(ts161)
-'''
-#sst_diff(ts151, ts161)
-#jb1_timeseries_raw = pd.read_csv(path+'EPM151_JamesBay1_timeseries_data.csv', index_col=False)
-#jb1_timeseries_raw = jb1_timeseries_raw.reset_index(drop=True)
-
-#jb2_timeseries_raw = pd.read_csv(path+'EPM151_JamesBay2_timeseries_data.csv', index_col=False)
-#jb2_timeseries_raw = jb2_timeseries_raw.reset_index(drop=True)
-
-#jb3_timeseries_raw = pd.read_csv(path+'EPM151_JamesBay3_timeseries_data.csv', index_col=False)
-#jb3_timeseries_raw = jb3_timeseries_raw.reset_index(drop=True)
-
-#jb4_timeseries_raw = pd.read_csv(path+'EPM151_JamesBay4_timeseries_data.csv', index_col=False)
-#jb4_timeseries_raw = jb4_timeseries_raw.reset_index(drop=True)
-
-#anhalyze_timeseries(timeseries=jb_timeseries_riverheat, EPM151=False)
-
-
+#timeseries_151 = pd.read_csv(path+'EPM151_shbjb_timeseries_data.csv', index_col=False)
+#anhalyze_timeseries(timeseries=timeseries_151, runid='EPM151')
 
